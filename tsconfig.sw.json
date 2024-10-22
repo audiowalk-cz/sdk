@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "compilerOptions": {
+        "rootDir": "./src",
+        "outDir": "./dist/service-worker",
+        "composite": true,
+        "module": "es2020",
+        "moduleResolution": "Node",
+        "declaration": true,
+        "declarationMap": true,
+        "lib": [
+            "WebWorker",
+            "ES2015"
+        ],
+        "types": []
+    },
+    "include": [
+        "src/service-worker.ts"
+    ],
+}
