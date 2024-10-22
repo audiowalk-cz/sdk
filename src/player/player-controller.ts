@@ -1,119 +1,34 @@
-import { BehaviorSubject, map, Subject } from "rxjs";
+import { BehaviorSubject, combineLatest, map, Subject } from "rxjs";
 
 export interface PlayerControllerOptions {
-  file: string | null = null``;
+  playOnInit?: boolean;
+  autoSave?: boolean;
+}
 
-  playOnInit: boolean = false;
-  autoSave: boolean = true;
-
-  title: string = "Bílý obraz";
-  author: string = "Pomezí, z. s.";
-  artwork: MediaImage[] = [];
-  ticker: string;
+export enum PlayerStatus {
+  "playing" = "playing",
+  "paused" = "paused",
+  "ended" = "ended",
 }
 
 export class PlayerController {
-  public readonly onPlay = new Subject();
-  public readonly onPause = new Subject();
-  public readonly onStop = new Subject();
-  public readonly onTime = new Subject<number>();
+  public readonly onPlay = new Subject<void>();
+  public readonly onPause = new Subject<void>();
+  public readonly onStop = new Subject<void>();
 
-  public readonly status = new BehaviorSubject<MediaSessionPlaybackState>("none");
+  public readonly currentTime = new BehaviorSubject<number>(0);
+  public readonly totalTime = new BehaviorSubject<number>(0);
+  public readonly progress = combineLatest([this.currentTime, this.totalTime]).pipe(
+    map(([currentTime, totalTime]) => currentTime / totalTime)
+  );
+
+  public readonly status = new BehaviorSubject<PlayerStatus | null>(null);
 
   public readonly playing = this.status.pipe(map((status) => status === "playing"));
 
-  constructor(playerElement: HTMLAudioElement, options: PlayerControllerOptions) {
-    this.createControls({
-      title: options.title,
-      artist: options.author,
-      artwork: options.artwork,
-    });
+  private file?: string;
 
-    this.status.subscribe((status) => {
-      navigator.mediaSession.playbackState = status;
-    });
-  }
-
-  ngAfterViewInit() {
-    const position = localStorage.getItem(`progress-${this.file()}`);
-    if (position && this.autoSave()) this.playerElement!.nativeElement.currentTime = parseFloat(position);
-
-    if (this.playOnInit()) this.playerElement!.nativeElement.play();
-
-    this.playerElement!.nativeElement.addEventListener("play", () => {
-      this.onPlay.emit();
-      this.status.set("playing");
-    });
-
-    this.playerElement!.nativeElement.addEventListener("pause", () => {
-      this.onPause.emit();
-      this.status.set("paused");
-    });
-
-    this.playerElement!.nativeElement.addEventListener("ended", () => {
-      this.onStop.emit();
-      this.status.set("none");
-    });
-
-    this.playerElement!.nativeElement.addEventListener("timeupdate", () => {
-      navigator.mediaSession.setPositionState({
-        duration: this.playerElement!.nativeElement.duration,
-        playbackRate: this.playerElement!.nativeElement.playbackRate,
-        position: this.playerElement!.nativeElement.currentTime,
-      });
-
-      this.onTime.emit(this.playerElement!.nativeElement.currentTime);
-
-      this.savePosition(this.playerElement!.nativeElement.currentTime);
-    });
-  }
-
-  private log(message: string) {
-    const time = this.playerElement?.nativeElement.currentTime
-      ? Math.round(this.playerElement?.nativeElement.currentTime)
-      : null;
-
-    if (time) message += ` @${time}s`;
-
-    console.log(`[${WalkPlayerComponent.name}] ${message}`);
-  }
-
-  savePosition(currentTime: number) {
-    localStorage.setItem(`progress-${this.file()}`, String(currentTime));
-  }
-
-  play() {
-    this.log("Called play");
-    this.playerElement?.nativeElement.play();
-  }
-
-  pause() {
-    this.log("Called pause");
-    this.playerElement?.nativeElement.pause();
-  }
-
-  seekTo(seconds: number) {
-    if (!this.playerElement) return;
-    this.log("Called seekTo");
-    this.playerElement.nativeElement.currentTime = seconds;
-  }
-
-  back() {
-    if (!this.playerElement) return;
-    const position = this.playerElement.nativeElement.currentTime;
-    this.seekTo(Math.max(position - 10, 0));
-  }
-
-  async forward() {
-    if (!this.playerElement) return;
-    const position = this.playerElement.nativeElement.currentTime;
-    const duration = this.playerElement.nativeElement.duration;
-    this.seekTo(duration && duration > 0 ? Math.min(position + 10, duration) : position + 10);
-  }
-
-  createControls(metadata: MediaMetadataInit) {
-    navigator.mediaSession.metadata = new MediaMetadata(metadata);
-
+  constructor(private readonly playerElement: HTMLAudioElement, private options: PlayerControllerOptions = {}) {
     navigator.mediaSession.setActionHandler("play", () => this.play());
     navigator.mediaSession.setActionHandler("pause", () => this.pause());
     navigator.mediaSession.setActionHandler("seekbackward", () => this.back());
@@ -125,5 +40,130 @@ export class PlayerController {
       // multiple times as part of a sequence and this is not the last call in that sequence.
       if (details.fastSeek !== true && details.seekTime) this.seekTo(details.seekTime);
     });
+
+    this.status.subscribe((status) => {
+      switch (status) {
+        case "playing":
+          navigator.mediaSession.playbackState = "playing";
+          break;
+        case "paused":
+          navigator.mediaSession.playbackState = "paused";
+          break;
+
+        default:
+        case "ended":
+          navigator.mediaSession.playbackState = "none";
+          break;
+      }
+    });
+
+    this.playerElement.addEventListener("play", () => {
+      this.onPlay.next();
+      this.status.next(PlayerStatus.playing);
+    });
+
+    this.playerElement.addEventListener("pause", () => {
+      this.onPause.next();
+      this.status.next(PlayerStatus.paused);
+    });
+
+    this.playerElement.addEventListener("ended", () => {
+      this.onStop.next();
+      this.status.next(PlayerStatus.ended);
+    });
+
+    this.playerElement.addEventListener("loadedmetadata", (event) => {
+      if (this.playerElement.duration) {
+        this.totalTime.next(this.playerElement.duration);
+      }
+    });
+
+    this.playerElement.addEventListener("timeupdate", () => {
+      navigator.mediaSession.setPositionState({
+        duration: this.playerElement.duration,
+        playbackRate: this.playerElement.playbackRate,
+        position: this.playerElement.currentTime,
+      });
+
+      this.currentTime.next(this.playerElement.currentTime);
+
+      if (this.playerElement.duration) {
+        this.totalTime.next(this.playerElement.duration);
+      }
+
+      this.savePosition(this.playerElement.currentTime);
+    });
+  }
+
+  open(file: string, metadata: MediaMetadataInit) {
+    this.file = file;
+
+    navigator.mediaSession.metadata = new MediaMetadata(metadata);
+
+    const position = localStorage.getItem(`progress-${this.file}`);
+    if (position && this.options.autoSave) this.playerElement.currentTime = parseFloat(position);
+
+    if (this.options.playOnInit) this.playerElement.play();
+  }
+
+  close() {
+    this.file = undefined;
+    this.playerElement.pause();
+    this.playerElement.src = "";
+
+    navigator.mediaSession.setActionHandler("play", null);
+    navigator.mediaSession.setActionHandler("pause", null);
+    navigator.mediaSession.setActionHandler("previoustrack", null);
+    navigator.mediaSession.setActionHandler("nexttrack", null);
+    navigator.mediaSession.playbackState = "none";
+    navigator.mediaSession.metadata = null;
+  }
+
+  play() {
+    if (!this.file) throw new Error("No file opened");
+
+    this.log("Called play");
+    this.playerElement?.play();
+  }
+
+  pause() {
+    if (!this.file) throw new Error("No file opened");
+    this.log("Called pause");
+    this.playerElement?.pause();
+  }
+
+  seekTo(seconds: number) {
+    if (!this.file) throw new Error("No file opened");
+
+    this.log("Called seekTo");
+    this.playerElement.currentTime = seconds;
+  }
+
+  back() {
+    if (!this.file) throw new Error("No file opened");
+
+    const position = this.playerElement.currentTime;
+    this.seekTo(Math.max(position - 10, 0));
+  }
+
+  forward() {
+    if (!this.file) throw new Error("No file opened");
+
+    const position = this.playerElement.currentTime;
+    const duration = this.playerElement.duration;
+    this.seekTo(duration && duration > 0 ? Math.min(position + 10, duration) : position + 10);
+  }
+
+  private savePosition(currentTime: number) {
+    if (!this.file) return;
+    localStorage.setItem(`progress-${this.file}`, String(currentTime));
+  }
+
+  private log(message: string) {
+    const time = this.playerElement?.currentTime ? Math.round(this.playerElement?.currentTime) : null;
+
+    if (time) message += ` @${time}s`;
+
+    console.log(`[PlayerController] ${message}`);
   }
 }
