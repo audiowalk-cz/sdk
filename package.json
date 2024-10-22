@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "tsc -w",
     "build": "tsc",
+    "prepublishOnly": "npm run build",
     "release:patch": "npm version patch && git push && npm publish --access public"
   },
   "author": "",
