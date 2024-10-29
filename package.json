@@ -18,6 +18,10 @@
       "default": "./angular/dist/fesm2022/audiowalk-components.mjs"
     }
   },
+  "files": [
+    "dist",
+    "angular/dist"
+  ],
   "type": "module",
   "scripts": {
     "dev": "tsc -w",
