@@ -25,9 +25,9 @@
     "build:core": "tsc",
     "build:angular": "cd angular && npm run build",
     "prepublishOnly": "npm run build",
-    "release:patch": "npm version patch && git push && npm publish --access public",
-    "release:minor": "npm version minor && git push && npm publish --access public",
-    "release:major": "npm version major && git push && npm publish --access public"
+    "release:patch": "git switch master && npm version patch && git switch release && git merge master --ff-only && git push --follow-tags && git switch master && git push",
+    "release:minor": "git switch master && npm version minor && git switch release && git merge master --ff-only && git push --follow-tags && git switch master && git push",
+    "release:major": "git switch master && npm version major && git switch release && git merge master --ff-only && git push --follow-tags && git switch master && git push"
   },
   "author": "",
   "license": "ISC",
