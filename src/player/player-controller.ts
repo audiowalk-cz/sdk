@@ -1,4 +1,5 @@
 import { BehaviorSubject, combineLatest, map, Subject } from "rxjs";
+import { LocalStorage } from "../storage/local-storage";
 
 export interface PlayerControllerOptions {
   playOnInit?: boolean;
@@ -27,6 +28,8 @@ export class PlayerController {
   public readonly playing = this.status.pipe(map((status) => status === "playing"));
 
   private file?: string;
+
+  private localStorage = new LocalStorage();
 
   constructor(private readonly playerElement: HTMLAudioElement, private options: PlayerControllerOptions = {}) {
     navigator.mediaSession.setActionHandler("play", () => this.play());
@@ -95,15 +98,15 @@ export class PlayerController {
     });
   }
 
-  open(file: string, metadata: MediaMetadataInit) {
+  async open(file: string, metadata: MediaMetadataInit) {
     this.file = file;
 
     navigator.mediaSession.metadata = new MediaMetadata(metadata);
 
-    const position = localStorage.getItem(`progress-${this.file}`);
+    const position = await this.localStorage.get(`progress-${this.file}`);
     if (position && this.options.autoSave) this.playerElement.currentTime = parseFloat(position);
 
-    if (this.options.playOnInit) this.playerElement.play();
+    if (this.options.playOnInit) await this.playerElement.play();
   }
 
   close() {
@@ -154,9 +157,9 @@ export class PlayerController {
     this.seekTo(duration && duration > 0 ? Math.min(position + seconds, duration) : position + seconds);
   }
 
-  private savePosition(currentTime: number) {
+  private async savePosition(currentTime: number) {
     if (!this.file) return;
-    localStorage.setItem(`progress-${this.file}`, String(currentTime));
+    await this.localStorage.set(`progress-${this.file}`, String(currentTime));
   }
 
   private log(message: string) {
