@@ -139,19 +139,19 @@ export class PlayerController {
     this.playerElement.currentTime = seconds;
   }
 
-  back() {
+  back(seconds: number = 10) {
     if (!this.file) throw new Error("No file opened");
 
     const position = this.playerElement.currentTime;
-    this.seekTo(Math.max(position - 10, 0));
+    this.seekTo(Math.max(position - seconds, 0));
   }
 
-  forward() {
+  forward(seconds: number = 10) {
     if (!this.file) throw new Error("No file opened");
 
     const position = this.playerElement.currentTime;
     const duration = this.playerElement.duration;
-    this.seekTo(duration && duration > 0 ? Math.min(position + 10, duration) : position + 10);
+    this.seekTo(duration && duration > 0 ? Math.min(position + seconds, duration) : position + seconds);
   }
 
   private savePosition(currentTime: number) {
