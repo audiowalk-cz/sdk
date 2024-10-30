@@ -5,7 +5,19 @@
     "type": "git",
     "url": "git+https://github.com/audiowalk-cz/components.git"
   },
-  "exports": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./package.json": "./package.json",
+    "./angular": {
+      "types": "./angular/dist/index.d.ts",
+      "esm2022": "./angular/dist/esm2022/audiowalk-components.mjs",
+      "esm": "./angular/dist/esm2022/audiowalk-components.mjs",
+      "default": "./angular/dist/fesm2022/audiowalk-components.mjs"
+    }
+  },
   "files": [
     "dist",
     "angular/dist"
@@ -13,7 +25,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsc -w",
-    "build": "tsc",
+    "build": "concurrently --kill-others-on-fail --names core,angular \"npm run build:core\" \"npm run build:angular\"",
+    "build:core": "tsc",
+    "build:angular": "cd angular && npm run build",
     "prepublishOnly": "npm run build",
     "release:patch": "git switch master && npm version patch && git switch release && git merge master --ff-only && git push --follow-tags && git switch master && git push",
     "release:minor": "git switch master && npm version minor && git switch release && git merge master --ff-only && git push --follow-tags && git switch master && git push",

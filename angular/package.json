@@ -1,0 +1,22 @@
+{
+  "name": "@audiowalk/angular",
+  "version": "1.0.6",
+  "private": true,
+  "scripts": {
+    "dev": "ng build --watch",
+    "build": "ng build"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^18.2.1",
+    "@angular/cli": "^18.2.1",
+    "ng-packagr": "^18.2.1",
+    "typescript": "^5.5.4"
+  },
+  "peerDependencies": {
+    "@angular/common": ">=16",
+    "@angular/core": ">=16"
+  },
+  "dependencies": {
+    "@audiowalk/sdk": "file:.."
+  }
+}
