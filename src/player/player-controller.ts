@@ -27,8 +27,6 @@ export class PlayerController {
 
   public readonly playing = this.status.pipe(map((status) => status === "playing"));
 
-  private file?: string;
-
   private localStorage = new LocalStorage();
 
   constructor(private readonly playerElement: HTMLAudioElement, private options: PlayerControllerOptions = {}) {
@@ -41,7 +39,7 @@ export class PlayerController {
     navigator.mediaSession.setActionHandler("seekto", (details) => {
       // The fastSeek dictionary member will be true if the seek action is being called
       // multiple times as part of a sequence and this is not the last call in that sequence.
-      if (details.fastSeek !== true && details.seekTime) this.seekTo(details.seekTime);
+      if (details.fastSeek !== true && details.seekTime !== undefined) this.seekTo(details.seekTime);
     });
 
     this.status.subscribe((status) => {
@@ -83,7 +81,7 @@ export class PlayerController {
 
     this.playerElement.addEventListener("timeupdate", () => {
       navigator.mediaSession.setPositionState({
-        duration: this.playerElement.duration,
+        duration: Number.isNaN(this.playerElement.duration) ? 0 : this.playerElement.duration,
         playbackRate: this.playerElement.playbackRate,
         position: this.playerElement.currentTime,
       });
@@ -98,19 +96,20 @@ export class PlayerController {
     });
   }
 
-  async open(file: string, metadata: MediaMetadataInit) {
-    this.file = file;
+  async open(file: string) {
+    this.playerElement.src = file;
 
-    navigator.mediaSession.metadata = new MediaMetadata(metadata);
-
-    const position = await this.localStorage.get(`progress-${this.file}`);
+    const position = await this.localStorage.get(`progress-${this.playerElement.src}`);
     if (position && this.options.autoSave) this.playerElement.currentTime = parseFloat(position);
 
     if (this.options.playOnInit) await this.playerElement.play();
   }
 
+  setMetadata(metadata: MediaMetadataInit) {
+    navigator.mediaSession.metadata = new MediaMetadata(metadata);
+  }
+
   close() {
-    this.file = undefined;
     this.playerElement.pause();
     this.playerElement.src = "";
 
@@ -123,34 +122,34 @@ export class PlayerController {
   }
 
   play() {
-    if (!this.file) throw new Error("No file opened");
+    if (!this.playerElement.src) throw new Error("No file opened");
 
     this.log("Called play");
     this.playerElement?.play();
   }
 
   pause() {
-    if (!this.file) throw new Error("No file opened");
+    if (!this.playerElement.src) throw new Error("No file opened");
     this.log("Called pause");
     this.playerElement?.pause();
   }
 
   seekTo(seconds: number) {
-    if (!this.file) throw new Error("No file opened");
+    if (!this.playerElement.src) throw new Error("No file opened");
 
     this.log("Called seekTo");
     this.playerElement.currentTime = seconds;
   }
 
   back(seconds: number = 10) {
-    if (!this.file) throw new Error("No file opened");
+    if (!this.playerElement.src) throw new Error("No file opened");
 
     const position = this.playerElement.currentTime;
     this.seekTo(Math.max(position - seconds, 0));
   }
 
   forward(seconds: number = 10) {
-    if (!this.file) throw new Error("No file opened");
+    if (!this.playerElement.src) throw new Error("No file opened");
 
     const position = this.playerElement.currentTime;
     const duration = this.playerElement.duration;
@@ -158,8 +157,8 @@ export class PlayerController {
   }
 
   private async savePosition(currentTime: number) {
-    if (!this.file) return;
-    await this.localStorage.set(`progress-${this.file}`, String(currentTime));
+    if (!this.playerElement.src) return;
+    await this.localStorage.set(`progress-${this.playerElement.src}`, String(currentTime));
   }
 
   private log(message: string) {
