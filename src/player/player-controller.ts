@@ -99,8 +99,11 @@ export class PlayerController {
   async open(file: string) {
     this.playerElement.src = file;
 
-    const position = await this.localStorage.get(`progress-${this.playerElement.src}`);
-    if (position && this.options.autoSave) this.playerElement.currentTime = parseFloat(position);
+    const position = await this.localStorage.get(
+      `progress-${this.playerElement.src}`,
+      (value) => typeof value === "number"
+    );
+    if (position && this.options.autoSave) this.playerElement.currentTime = position;
 
     if (this.options.playOnInit) await this.playerElement.play();
   }
