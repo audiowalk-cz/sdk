@@ -1,4 +1,4 @@
-import { BehaviorSubject, map, Subject } from "rxjs";
+import { BehaviorSubject, distinctUntilChanged, map, Subject } from "rxjs";
 import { LocalStorage } from "../storage/local-storage";
 
 export interface BasicChapterDefinition<ChapterId extends string = string, StoryState extends {} = {}> {
@@ -50,7 +50,9 @@ export class StoryController<
     this.localStorage = new LocalStorage({ prefix: options.stateStorageKey ?? "story-state" });
 
     this.storyState
-      .pipe(map((state) => (state.currentChapter ? story.chapters[state.currentChapter] : null)))
+      .pipe(map((state) => state.currentChapter))
+      .pipe(distinctUntilChanged())
+      .pipe(map((currentChapter) => (currentChapter ? story.chapters[currentChapter] : null)))
       .subscribe(this.currentChapter);
 
     this.loadState().then((state) => {
@@ -98,16 +100,15 @@ export class StoryController<
       const storyState = this.storyState.value;
       const string = await chapter.nextChapter(storyState);
 
-      this.setChapter(string);
+      return this.setChapter(string);
     }
 
     throw new Error(`Invalid nextChapter type in chapter ${chapter.id}`);
   }
 
   async resetStory() {
-    await this.setState(this.story.initialState);
-
     await LocalStorage.clearAll();
+    await this.setState(this.story.initialState);
   }
 
   endStory() {

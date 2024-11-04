@@ -1,9 +1,13 @@
-import { BehaviorSubject, combineLatest, map, Subject } from "rxjs";
+import { BehaviorSubject, combineLatest, map, Subject, take, takeUntil, takeWhile } from "rxjs";
 import { LocalStorage } from "../storage/local-storage";
 
 export interface PlayerControllerOptions {
-  playOnInit?: boolean;
   autoSave?: boolean;
+  audioElement?: HTMLAudioElement;
+  loop?: boolean;
+  fadeIn?: boolean;
+  fadeOut?: boolean;
+  fadeInterval?: number;
 }
 
 export enum PlayerStatus {
@@ -26,39 +30,26 @@ export class PlayerController {
   private trackId: string | null = null;
 
   public readonly status = new BehaviorSubject<PlayerStatus | null>(null);
-
   public readonly playing = this.status.pipe(map((status) => status === "playing"));
 
-  private localStorage = new LocalStorage();
+  private playerElement: HTMLAudioElement;
 
-  constructor(private readonly playerElement: HTMLAudioElement, private options: PlayerControllerOptions = {}) {
-    navigator.mediaSession.setActionHandler("play", () => this.play());
-    navigator.mediaSession.setActionHandler("pause", () => this.pause());
-    navigator.mediaSession.setActionHandler("seekbackward", () => this.back());
-    navigator.mediaSession.setActionHandler("seekforward", () => this.forward());
-    navigator.mediaSession.setActionHandler("previoustrack", () => this.back());
-    navigator.mediaSession.setActionHandler("nexttrack", () => this.forward());
-    navigator.mediaSession.setActionHandler("seekto", (details) => {
-      // The fastSeek dictionary member will be true if the seek action is being called
-      // multiple times as part of a sequence and this is not the last call in that sequence.
-      if (details.fastSeek !== true && details.seekTime !== undefined) this.seekTo(details.seekTime);
-    });
+  private localStorage = new LocalStorage({ prefix: "player" });
 
-    this.status.subscribe((status) => {
-      switch (status) {
-        case "playing":
-          navigator.mediaSession.playbackState = "playing";
-          break;
-        case "paused":
-          navigator.mediaSession.playbackState = "paused";
-          break;
+  private options: PlayerControllerOptions & Required<Pick<PlayerControllerOptions, "fadeInterval">>;
+  private defaultOptions: Required<Pick<PlayerControllerOptions, "fadeInterval">> = {
+    fadeInterval: 2000,
+  };
 
-        default:
-        case "ended":
-          navigator.mediaSession.playbackState = "none";
-          break;
-      }
-    });
+  private destroyEvent = new Subject<void>();
+
+  private fadeIntervalSubscription?: number;
+  private fadePromiseResolve?: () => void;
+
+  constructor(trackId: string, trackUrl: string, options: PlayerControllerOptions = {}) {
+    this.options = { ...this.defaultOptions, ...options };
+
+    this.playerElement = this.options.audioElement ?? new Audio();
 
     this.playerElement.addEventListener("play", () => {
       this.onPlay.next();
@@ -82,21 +73,39 @@ export class PlayerController {
     });
 
     this.playerElement.addEventListener("timeupdate", () => {
-      navigator.mediaSession.setPositionState({
-        duration: Number.isNaN(this.playerElement.duration) ? 0 : this.playerElement.duration,
-        playbackRate: this.playerElement.playbackRate,
-        position: this.playerElement.currentTime,
-      });
-
       this.currentTime.next(this.playerElement.currentTime);
 
       if (this.playerElement.duration) {
         this.totalTime.next(this.playerElement.duration);
       }
-      if (this.options.autoSave) {
-        this.savePosition(this.playerElement.currentTime);
-      }
     });
+
+    if (this.options.autoSave) {
+      this.currentTime.pipe(takeUntil(this.destroyEvent)).subscribe((currentTime) => this.savePosition(currentTime));
+    }
+
+    if (this.options.fadeOut && !this.options.loop) {
+      combineLatest([this.currentTime, this.totalTime])
+        .pipe(takeUntil(this.destroyEvent))
+        .pipe(
+          takeWhile(([currentTime, totalTime]) => totalTime - currentTime < this.options.fadeInterval),
+          take(1)
+        )
+        .subscribe(async (currentTime) => {
+          this.fadeOut();
+        });
+    }
+
+    if (this.options.loop) {
+      this.onStop.pipe(takeUntil(this.destroyEvent)).subscribe(() => {
+        this.playerElement.currentTime = 0;
+        this.playerElement.play();
+      });
+    }
+
+    this.open(trackId, trackUrl);
+
+    this.log("Initialized player", this.playerElement);
   }
 
   async open(id: string, file: string) {
@@ -105,37 +114,70 @@ export class PlayerController {
 
     const position = await this.localStorage.get(`progress-${this.trackId}`, (value) => typeof value === "number");
     if (position && this.options.autoSave) this.playerElement.currentTime = position;
-
-    if (this.options.playOnInit) await this.playerElement.play();
   }
 
-  setMetadata(metadata: MediaMetadataInit) {
-    navigator.mediaSession.metadata = new MediaMetadata(metadata);
+  async destroy() {
+    this.destroyEvent.next();
+
+    await this.pause();
+
+    this.playerElement.remove();
   }
 
-  close() {
-    this.playerElement.pause();
-    // this.playerElement.src = "";
-
-    navigator.mediaSession.setActionHandler("play", null);
-    navigator.mediaSession.setActionHandler("pause", null);
-    navigator.mediaSession.setActionHandler("previoustrack", null);
-    navigator.mediaSession.setActionHandler("nexttrack", null);
-    navigator.mediaSession.playbackState = "none";
-    navigator.mediaSession.metadata = null;
-  }
-
-  play() {
+  async play(options: { fadeIn?: boolean } = {}) {
     if (!this.playerElement.src) throw new Error("No file opened");
 
     this.log("Called play");
     this.playerElement?.play();
+
+    if (options.fadeIn !== undefined ? options.fadeIn : this.options.fadeIn) await this.fadeIn();
   }
 
-  pause() {
+  async fadeIn() {
+    if (!this.options.fadeInterval) {
+      clearInterval(this.fadeIntervalSubscription);
+      this.fadePromiseResolve?.();
+    }
+
+    return new Promise<void>((resolve) => {
+      this.playerElement.volume = 0;
+
+      this.fadePromiseResolve = resolve;
+      this.fadeIntervalSubscription = setInterval(() => {
+        if (this.playerElement.volume >= 1) {
+          clearInterval(this.fadeIntervalSubscription);
+          return resolve();
+        }
+        this.playerElement.volume += (1 / this.options.fadeInterval) * 100;
+      }, 100);
+    });
+  }
+
+  async fadeOut() {
+    if (!this.options.fadeInterval) {
+      clearInterval(this.fadeIntervalSubscription);
+      this.fadePromiseResolve?.();
+    }
+
+    return new Promise<void>((resolve) => {
+      this.fadePromiseResolve = resolve;
+      this.fadeIntervalSubscription = setInterval(() => {
+        if (this.playerElement.volume <= 0) {
+          clearInterval(this.fadeIntervalSubscription);
+          this.playerElement.pause();
+          return;
+        }
+        this.playerElement.volume -= (1 / this.options.fadeInterval) * 100;
+      }, 100);
+    });
+  }
+
+  async pause(options: { fadeIn?: boolean } = {}) {
     if (!this.playerElement.src) throw new Error("No file opened");
     this.log("Called pause");
     this.playerElement?.pause();
+
+    if (options.fadeIn !== undefined ? options.fadeIn : this.options.fadeIn) await this.fadeOut();
   }
 
   seekTo(seconds: number) {
@@ -165,11 +207,11 @@ export class PlayerController {
     await this.localStorage.set(`progress-${this.trackId}`, currentTime);
   }
 
-  private log(message: string) {
+  private log(message: string, ...args: any[]) {
     const time = this.playerElement?.currentTime ? Math.round(this.playerElement?.currentTime) : null;
 
     if (time) message += ` @${time}s`;
 
-    console.log(`[PlayerController] ${message}`);
+    console.log(`[PlayerController] ${message}`, ...args);
   }
 }
