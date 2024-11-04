@@ -23,6 +23,8 @@ export class PlayerController {
     map(([currentTime, totalTime]) => currentTime / totalTime)
   );
 
+  private trackId: string | null = null;
+
   public readonly status = new BehaviorSubject<PlayerStatus | null>(null);
 
   public readonly playing = this.status.pipe(map((status) => status === "playing"));
@@ -91,18 +93,17 @@ export class PlayerController {
       if (this.playerElement.duration) {
         this.totalTime.next(this.playerElement.duration);
       }
-
-      this.savePosition(this.playerElement.currentTime);
+      if (this.options.autoSave) {
+        this.savePosition(this.playerElement.currentTime);
+      }
     });
   }
 
-  async open(file: string) {
+  async open(id: string, file: string) {
+    this.trackId = id;
     this.playerElement.src = file;
 
-    const position = await this.localStorage.get(
-      `progress-${this.playerElement.src}`,
-      (value) => typeof value === "number"
-    );
+    const position = await this.localStorage.get(`progress-${this.trackId}`, (value) => typeof value === "number");
     if (position && this.options.autoSave) this.playerElement.currentTime = position;
 
     if (this.options.playOnInit) await this.playerElement.play();
@@ -114,7 +115,7 @@ export class PlayerController {
 
   close() {
     this.playerElement.pause();
-    this.playerElement.src = "";
+    // this.playerElement.src = "";
 
     navigator.mediaSession.setActionHandler("play", null);
     navigator.mediaSession.setActionHandler("pause", null);
@@ -161,7 +162,7 @@ export class PlayerController {
 
   private async savePosition(currentTime: number) {
     if (!this.playerElement.src) return;
-    await this.localStorage.set(`progress-${this.playerElement.src}`, String(currentTime));
+    await this.localStorage.set(`progress-${this.trackId}`, currentTime);
   }
 
   private log(message: string) {
