@@ -106,6 +106,8 @@ export class StoryController<
 
   async resetStory() {
     await this.setState(this.story.initialState);
+
+    await LocalStorage.clearAll();
   }
 
   endStory() {

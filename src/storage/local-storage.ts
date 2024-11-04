@@ -3,7 +3,19 @@ export interface LocalStorageOptions {
 }
 
 export class LocalStorage {
+  private static readonly globalPrefix = "audiowalk";
+
   constructor(private options: Partial<LocalStorageOptions> = {}) {}
+
+  static async clearAll(prefix?: string) {
+    prefix = prefix ? `${LocalStorage.globalPrefix}-${prefix}` : LocalStorage.globalPrefix;
+    const keys = Object.keys(window.localStorage);
+    for (const key of keys) {
+      if (key.startsWith(prefix)) {
+        window.localStorage.removeItem(key);
+      }
+    }
+  }
 
   async get<T = unknown>(key: string, validate?: (value: unknown) => value is T): Promise<T | null> {
     const data = window.localStorage.getItem(this.getPrefixedKey(key));
@@ -36,7 +48,7 @@ export class LocalStorage {
   }
 
   private getPrefixedKey(key: string) {
-    const keyParts = ["audiowalk"];
+    const keyParts = [LocalStorage.globalPrefix];
     if (this.options.prefix) keyParts.push(this.options.prefix);
 
     keyParts.push(key);
