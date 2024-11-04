@@ -104,6 +104,10 @@ export class StoryController<
     throw new Error(`Invalid nextChapter type in chapter ${chapter.id}`);
   }
 
+  async resetStory() {
+    await this.setState(this.story.initialState);
+  }
+
   endStory() {
     this.end.next();
   }
