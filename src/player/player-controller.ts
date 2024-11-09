@@ -92,6 +92,7 @@ export class PlayerController {
           take(1)
         )
         .subscribe(async (currentTime) => {
+          this.onStop.next();
           this.fadeOut();
         });
     }
@@ -128,16 +129,13 @@ export class PlayerController {
     if (!this.playerElement.src) throw new Error("No file opened");
 
     this.log("Called play");
-    this.playerElement?.play();
+    await this.playerElement?.play();
 
     if (options.fadeIn !== undefined ? options.fadeIn : this.options.fadeIn) await this.fadeIn();
   }
 
   async fadeIn() {
-    if (!this.options.fadeInterval) {
-      clearInterval(this.fadeIntervalSubscription);
-      this.fadePromiseResolve?.();
-    }
+    this.clearFade();
 
     return new Promise<void>((resolve) => {
       this.playerElement.volume = 0;
@@ -148,16 +146,13 @@ export class PlayerController {
           clearInterval(this.fadeIntervalSubscription);
           return resolve();
         }
-        this.playerElement.volume += (1 / this.options.fadeInterval) * 100;
+        this.playerElement.volume = Math.min(this.playerElement.volume + (1 / this.options.fadeInterval) * 100, 1);
       }, 100);
     });
   }
 
   async fadeOut() {
-    if (!this.options.fadeInterval) {
-      clearInterval(this.fadeIntervalSubscription);
-      this.fadePromiseResolve?.();
-    }
+    this.clearFade();
 
     return new Promise<void>((resolve) => {
       this.fadePromiseResolve = resolve;
@@ -167,9 +162,14 @@ export class PlayerController {
           this.playerElement.pause();
           return;
         }
-        this.playerElement.volume -= (1 / this.options.fadeInterval) * 100;
+        this.playerElement.volume = Math.max(this.playerElement.volume - (1 / this.options.fadeInterval) * 100, 0);
       }, 100);
     });
+  }
+
+  private clearFade() {
+    clearInterval(this.fadeIntervalSubscription);
+    this.fadePromiseResolve?.();
   }
 
   async pause(options: { fadeIn?: boolean } = {}) {
