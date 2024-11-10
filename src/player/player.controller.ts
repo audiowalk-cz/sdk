@@ -1,6 +1,6 @@
 import { BehaviorSubject, combineLatest, map, Subject, takeUntil } from "rxjs";
 import { PartialBy } from "../helpers/objects";
-import { LocalStorage } from "../storage/local-storage";
+import { LocalStorageController } from "../storage/local-storage.controller";
 
 export interface PlayerControllerOptions {
   autoSave?: boolean;
@@ -36,7 +36,7 @@ export class PlayerController {
 
   private playerElement: HTMLAudioElement;
 
-  private localStorage = new LocalStorage({ prefix: "player" });
+  private localStorage = new LocalStorageController({ prefix: "player" });
 
   private options: PlayerControllerOptions;
 

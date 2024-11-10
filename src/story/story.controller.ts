@@ -1,5 +1,5 @@
 import { BehaviorSubject, distinctUntilChanged, map, Subject } from "rxjs";
-import { LocalStorage } from "../storage/local-storage";
+import { LocalStorageController } from "../storage/local-storage.controller";
 
 export interface BasicChapterDefinition<ChapterId extends string = string, StoryState extends {} = {}> {
   id: ChapterId;
@@ -39,7 +39,7 @@ export class StoryController<
   public readonly currentChapter = new BehaviorSubject<ChapterDefinition | null>(null);
   public readonly end = new Subject<void>();
 
-  private readonly localStorage: LocalStorage;
+  private readonly localStorage: LocalStorageController;
 
   private readonly stateStorageKey = "state";
 
@@ -47,7 +47,7 @@ export class StoryController<
     public readonly story: StoryDefinition<ChapterId, StoryState, ChapterDefinition>,
     private options: StoryControllerOptions<StoryState> = {}
   ) {
-    this.localStorage = new LocalStorage({ prefix: options.stateStorageKey ?? "story-state" });
+    this.localStorage = new LocalStorageController({ prefix: options.stateStorageKey ?? "story-state" });
 
     this.storyState
       .pipe(map((state) => state.currentChapter))
@@ -107,7 +107,7 @@ export class StoryController<
   }
 
   async resetStory() {
-    await LocalStorage.clearAll();
+    await LocalStorageController.clearAll();
     await this.setState(this.story.initialState);
   }
 

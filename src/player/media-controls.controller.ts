@@ -1,5 +1,5 @@
 import { combineLatest, Subject, takeUntil } from "rxjs";
-import { PlayerController } from "./player-controller";
+import { PlayerController } from "./player.controller";
 
 export class MediaControlsController {
   private playerDetachEvent = new Subject<void>();
