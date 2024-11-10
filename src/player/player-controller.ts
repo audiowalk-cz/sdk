@@ -1,14 +1,16 @@
-import { BehaviorSubject, combineLatest, map, Subject, take, takeUntil, takeWhile } from "rxjs";
+import { BehaviorSubject, combineLatest, map, Subject, takeUntil } from "rxjs";
+import { PartialBy } from "../helpers/objects";
 import { LocalStorage } from "../storage/local-storage";
 
 export interface PlayerControllerOptions {
   autoSave?: boolean;
   audioElement?: HTMLAudioElement;
   loop?: boolean;
-  fadeIn?: boolean;
-  fadeOut?: boolean;
-  fadeInterval?: number;
+  crossfade?: boolean;
+  crossfadeTime: number;
 }
+
+export type PlayerControllerParams = PartialBy<PlayerControllerOptions, "crossfadeTime">;
 
 export enum PlayerStatus {
   "playing" = "playing",
@@ -36,17 +38,17 @@ export class PlayerController {
 
   private localStorage = new LocalStorage({ prefix: "player" });
 
-  private options: PlayerControllerOptions & Required<Pick<PlayerControllerOptions, "fadeInterval">>;
-  private defaultOptions: Required<Pick<PlayerControllerOptions, "fadeInterval">> = {
-    fadeInterval: 2000,
+  private options: PlayerControllerOptions;
+
+  private defaultOptions: PlayerControllerOptions = {
+    crossfadeTime: 2000,
   };
 
   private destroyEvent = new Subject<void>();
 
-  private fadeIntervalSubscription?: number;
-  private fadePromiseResolve?: () => void;
+  private volume: number = 1;
 
-  constructor(trackId: string, trackUrl: string, options: PlayerControllerOptions = {}) {
+  constructor(trackId: string, trackUrl: string, options: PlayerControllerParams = {}) {
     this.options = { ...this.defaultOptions, ...options };
 
     this.playerElement = this.options.audioElement ?? new Audio();
@@ -61,10 +63,12 @@ export class PlayerController {
       this.status.next(PlayerStatus.paused);
     });
 
-    this.playerElement.addEventListener("ended", () => {
-      this.onStop.next();
-      this.status.next(PlayerStatus.ended);
-    });
+    if (!this.options.crossfade && !this.options.loop) {
+      this.playerElement.addEventListener("ended", () => {
+        this.onStop.next();
+        this.status.next(PlayerStatus.ended);
+      });
+    }
 
     this.playerElement.addEventListener("loadedmetadata", (event) => {
       if (this.playerElement.duration) {
@@ -84,16 +88,24 @@ export class PlayerController {
       this.currentTime.pipe(takeUntil(this.destroyEvent)).subscribe((currentTime) => this.savePosition(currentTime));
     }
 
-    if (this.options.fadeOut && !this.options.loop) {
+    if (this.options.crossfade && !this.options.loop) {
       combineLatest([this.currentTime, this.totalTime])
         .pipe(takeUntil(this.destroyEvent))
-        .pipe(
-          takeWhile(([currentTime, totalTime]) => totalTime - currentTime < this.options.fadeInterval),
-          take(1)
-        )
-        .subscribe(async (currentTime) => {
-          this.onStop.next();
-          this.fadeOut();
+        .subscribe(([currentTime, totalTime]) => {
+          const crossfadeTime = this.options.crossfadeTime / 1000;
+
+          if (currentTime >= totalTime - crossfadeTime) {
+            this.playerElement.volume = (totalTime - currentTime) / crossfadeTime;
+
+            if (this.status.value !== PlayerStatus.ended) {
+              this.onStop.next();
+              this.status.next(PlayerStatus.ended);
+            }
+          } else if (currentTime < crossfadeTime) {
+            this.playerElement.volume = currentTime / crossfadeTime;
+          } else {
+            this.playerElement.volume = this.volume;
+          }
         });
     }
 
@@ -117,67 +129,35 @@ export class PlayerController {
     if (position && this.options.autoSave) this.playerElement.currentTime = position;
   }
 
-  async destroy() {
-    this.destroyEvent.next();
-
-    await this.pause();
-
-    this.playerElement.remove();
+  async destroy(now?: boolean) {
+    if (this.options.crossfade) {
+      // destroy later to enable fade out
+      setTimeout(() => this.destroy(true), this.options.crossfadeTime);
+    } else {
+      this.destroyEvent.next();
+      await this.pause();
+      this.playerElement.remove();
+    }
   }
 
-  async play(options: { fadeIn?: boolean } = {}) {
+  async play() {
     if (!this.playerElement.src) throw new Error("No file opened");
 
     this.log("Called play");
     await this.playerElement?.play();
-
-    if (options.fadeIn !== undefined ? options.fadeIn : this.options.fadeIn) await this.fadeIn();
   }
 
-  async fadeIn() {
-    this.clearFade();
-
-    return new Promise<void>((resolve) => {
-      this.playerElement.volume = 0;
-
-      this.fadePromiseResolve = resolve;
-      this.fadeIntervalSubscription = setInterval(() => {
-        if (this.playerElement.volume >= 1) {
-          clearInterval(this.fadeIntervalSubscription);
-          return resolve();
-        }
-        this.playerElement.volume = Math.min(this.playerElement.volume + (1 / this.options.fadeInterval) * 100, 1);
-      }, 100);
-    });
-  }
-
-  async fadeOut() {
-    this.clearFade();
-
-    return new Promise<void>((resolve) => {
-      this.fadePromiseResolve = resolve;
-      this.fadeIntervalSubscription = setInterval(() => {
-        if (this.playerElement.volume <= 0) {
-          clearInterval(this.fadeIntervalSubscription);
-          this.playerElement.pause();
-          return;
-        }
-        this.playerElement.volume = Math.max(this.playerElement.volume - (1 / this.options.fadeInterval) * 100, 0);
-      }, 100);
-    });
-  }
-
-  private clearFade() {
-    clearInterval(this.fadeIntervalSubscription);
-    this.fadePromiseResolve?.();
-  }
-
-  async pause(options: { fadeIn?: boolean } = {}) {
+  async pause() {
     if (!this.playerElement.src) throw new Error("No file opened");
+    if (this.status.value === PlayerStatus.ended) return;
+
     this.log("Called pause");
     this.playerElement?.pause();
+  }
 
-    if (options.fadeIn !== undefined ? options.fadeIn : this.options.fadeIn) await this.fadeOut();
+  setVolume(volume: number) {
+    this.volume = volume;
+    this.playerElement.volume = Math.max(Math.min(volume, 1), 0);
   }
 
   seekTo(seconds: number) {
