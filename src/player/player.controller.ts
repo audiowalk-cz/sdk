@@ -1,4 +1,4 @@
-import { BehaviorSubject, combineLatest, map, Subject, takeUntil } from "rxjs";
+import { BehaviorSubject, combineLatest, filter, interval, map, Subject, takeUntil, takeWhile } from "rxjs";
 import { PartialBy } from "../helpers/objects";
 import { LocalStorageController } from "../storage/local-storage.controller";
 
@@ -24,9 +24,9 @@ export class PlayerController {
   public readonly onStop = new Subject<void>();
 
   public readonly currentTime = new BehaviorSubject<number>(0);
-  public readonly totalTime = new BehaviorSubject<number>(0);
+  public readonly totalTime = new BehaviorSubject<number | null>(null);
   public readonly progress = combineLatest([this.currentTime, this.totalTime]).pipe(
-    map(([currentTime, totalTime]) => currentTime / totalTime)
+    map(([currentTime, totalTime]) => (totalTime ? currentTime / totalTime : null))
   );
 
   private trackId: string | null = null;
@@ -48,10 +48,14 @@ export class PlayerController {
 
   private volume: number = 1;
 
+  private fadeCancelEvent = new Subject<void>();
+
   constructor(trackId: string, trackUrl: string, options: PlayerControllerParams = {}) {
     this.options = { ...this.defaultOptions, ...options };
 
     this.playerElement = this.options.audioElement ?? new Audio();
+
+    this.playerElement.volume = this.volume;
 
     this.playerElement.addEventListener("play", () => {
       this.onPlay.next();
@@ -63,12 +67,12 @@ export class PlayerController {
       this.status.next(PlayerStatus.paused);
     });
 
-    if (!this.options.crossfade && !this.options.loop) {
-      this.playerElement.addEventListener("ended", () => {
+    this.playerElement.addEventListener("ended", () => {
+      if (!this.options.crossfade && !this.options.loop) {
         this.onStop.next();
         this.status.next(PlayerStatus.ended);
-      });
-    }
+      }
+    });
 
     this.playerElement.addEventListener("loadedmetadata", (event) => {
       if (this.playerElement.duration) {
@@ -91,21 +95,10 @@ export class PlayerController {
     if (this.options.crossfade && !this.options.loop) {
       combineLatest([this.currentTime, this.totalTime])
         .pipe(takeUntil(this.destroyEvent))
+        .pipe(filter(([currentTime, totalTime]) => !!totalTime)) // track is loaded
+        .pipe(filter(([currentTime, totalTime]) => currentTime >= totalTime! - this.options.crossfadeTime / 1000)) // crossfading should start
         .subscribe(([currentTime, totalTime]) => {
-          const crossfadeTime = this.options.crossfadeTime / 1000;
-
-          if (currentTime >= totalTime - crossfadeTime) {
-            this.playerElement.volume = (totalTime - currentTime) / crossfadeTime;
-
-            if (this.status.value !== PlayerStatus.ended) {
-              this.onStop.next();
-              this.status.next(PlayerStatus.ended);
-            }
-          } else if (currentTime < crossfadeTime) {
-            this.playerElement.volume = currentTime / crossfadeTime;
-          } else {
-            this.playerElement.volume = this.volume;
-          }
+          if (this.status.value !== PlayerStatus.ended) this.stop();
         });
     }
 
@@ -118,7 +111,7 @@ export class PlayerController {
 
     this.open(trackId, trackUrl);
 
-    this.log("Initialized player", this.playerElement);
+    this.log("Initialized player", trackId);
   }
 
   async open(id: string, file: string) {
@@ -129,22 +122,45 @@ export class PlayerController {
     if (position && this.options.autoSave) this.playerElement.currentTime = position;
   }
 
-  async destroy(now?: boolean) {
-    if (this.options.crossfade) {
-      // destroy later to enable fade out
-      setTimeout(() => this.destroy(true), this.options.crossfadeTime);
+  async destroy(now: boolean = false) {
+    this.log("Called destroy", now ? "now" : "");
+
+    if (this.status.value !== PlayerStatus.ended) {
+      await this.stop();
+      return this.destroyNow();
+    }
+
+    // if crossfade is enabled, we might be ending crossfade just now, so wait for the crossfade to finish
+    if (this.options.crossfade && now !== true) {
+      setTimeout(() => this.destroyNow(), this.options.crossfadeTime);
     } else {
-      this.destroyEvent.next();
-      await this.pause();
-      this.playerElement.remove();
+      this.destroyNow();
     }
   }
 
-  async play() {
-    if (!this.playerElement.src) throw new Error("No file opened");
+  private destroyNow() {
+    this.log("Destroying player");
+    this.destroyEvent.next();
+    this.playerElement.src = "";
+    this.playerElement.pause();
+    this.playerElement.remove();
+  }
 
-    this.log("Called play");
+  async play(params: { fade?: boolean } = { fade: this.options.crossfade }) {
+    if (!this.playerElement.src) throw new Error("No file opened");
+    if (this.status.value === PlayerStatus.playing) return;
+
+    this.log("Called play", params.fade ? "with fade" : "");
+
+    if (params.fade) {
+      this.playerElement.volume = 0;
+    }
+
     await this.playerElement?.play();
+
+    if (params.fade) {
+      await this.fadeToVolume(this.volume);
+    }
   }
 
   async pause() {
@@ -155,28 +171,76 @@ export class PlayerController {
     this.playerElement?.pause();
   }
 
-  setVolume(volume: number) {
-    this.volume = volume;
-    this.playerElement.volume = Math.max(Math.min(volume, 1), 0);
+  async stop(params: { fade?: boolean } = { fade: this.options.crossfade }) {
+    this.log("Called stop", params.fade ? "with fade" : "");
+
+    if (this.status.value !== PlayerStatus.ended) {
+      this.status.next(PlayerStatus.ended);
+      this.onStop.next();
+    }
+
+    if (params.fade) {
+      await this.fadeToVolume(0);
+    }
+
+    this.playerElement.pause();
+    this.playerElement.currentTime = 0;
   }
 
   seekTo(seconds: number) {
     if (!this.playerElement.src) throw new Error("No file opened");
+    if (this.status.value === PlayerStatus.ended) return;
 
     this.log("Called seekTo");
     this.playerElement.currentTime = seconds;
   }
 
-  back(seconds: number = 10) {
-    if (!this.playerElement.src) throw new Error("No file opened");
+  async setVolume(volume: number, params: { fade?: boolean } = {}) {
+    this.log("Called set volume", volume, params.fade ? "with fade" : "");
 
+    this.volume = volume;
+
+    if (params.fade) {
+      await this.fadeToVolume(volume);
+    } else {
+      this.playerElement.volume = Math.max(Math.min(volume, 1), 0);
+    }
+  }
+
+  async fadeToVolume(volume: number) {
+    return new Promise<void>((resolve, reject) => {
+      this.fadeCancelEvent.next();
+
+      this.volume = volume;
+
+      const fadeOutInterval = 100;
+      const fadeOutStep = (this.volume - this.playerElement.volume) / (this.options.crossfadeTime / fadeOutInterval);
+
+      if (fadeOutStep === 0) return resolve();
+
+      interval(fadeOutInterval)
+        .pipe(takeUntil(this.fadeCancelEvent))
+        .pipe(takeUntil(this.destroyEvent))
+        .pipe(takeWhile(() => Math.abs(this.playerElement.volume - this.volume) > Math.abs(fadeOutStep)))
+        .subscribe({
+          next: () => {
+            this.playerElement.volume += fadeOutStep;
+          },
+          error: (error) => reject(error),
+          complete: () => {
+            this.playerElement.volume = this.volume;
+            resolve();
+          },
+        });
+    });
+  }
+
+  back(seconds: number = 10) {
     const position = this.playerElement.currentTime;
     this.seekTo(Math.max(position - seconds, 0));
   }
 
   forward(seconds: number = 10) {
-    if (!this.playerElement.src) throw new Error("No file opened");
-
     const position = this.playerElement.currentTime;
     const duration = this.playerElement.duration;
     this.seekTo(duration && duration > 0 ? Math.min(position + seconds, duration) : position + seconds);
@@ -190,7 +254,7 @@ export class PlayerController {
   private log(message: string, ...args: any[]) {
     const time = this.playerElement?.currentTime ? Math.round(this.playerElement?.currentTime) : null;
 
-    if (time) message += ` @${time}s`;
+    if (time) args.push(`@${time}s`);
 
     console.log(`[PlayerController] ${message}`, ...args);
   }
