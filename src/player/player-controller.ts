@@ -97,7 +97,6 @@ export class PlayerController {
         .pipe(takeUntil(this.destroyEvent))
         .pipe(filter(([currentTime, totalTime]) => !!totalTime)) // track is loaded
         .pipe(filter(([currentTime, totalTime]) => currentTime >= totalTime! - this.options.crossfadeTime / 1000)) // crossfading should start
-
         .subscribe(([currentTime, totalTime]) => {
           if (this.status.value !== PlayerStatus.ended) this.stop();
         });
@@ -126,13 +125,24 @@ export class PlayerController {
   async destroy(now: boolean = false) {
     this.log("Called destroy", now ? "now" : "");
 
-    if (this.options.crossfade && now !== true) {
-      setTimeout(() => this.destroy(true), this.options.crossfadeTime);
-      return;
+    if (this.status.value !== PlayerStatus.ended) {
+      await this.stop();
+      return this.destroyNow();
     }
 
+    // if crossfade is enabled, we might be ending crossfade just now, so wait for the crossfade to finish
+    if (this.options.crossfade && now !== true) {
+      setTimeout(() => this.destroyNow(), this.options.crossfadeTime);
+    } else {
+      this.destroyNow();
+    }
+  }
+
+  private destroyNow() {
     this.log("Destroying player");
     this.destroyEvent.next();
+    this.playerElement.src = "";
+    this.playerElement.pause();
     this.playerElement.remove();
   }
 
@@ -165,8 +175,8 @@ export class PlayerController {
     this.log("Called stop", params.fade ? "with fade" : "");
 
     if (this.status.value !== PlayerStatus.ended) {
-      this.onStop.next();
       this.status.next(PlayerStatus.ended);
+      this.onStop.next();
     }
 
     if (params.fade) {
@@ -174,6 +184,7 @@ export class PlayerController {
     }
 
     this.playerElement.pause();
+    this.playerElement.currentTime = 0;
   }
 
   seekTo(seconds: number) {
@@ -184,13 +195,13 @@ export class PlayerController {
     this.playerElement.currentTime = seconds;
   }
 
-  setVolume(volume: number, params: { fade?: boolean } = {}) {
+  async setVolume(volume: number, params: { fade?: boolean } = {}) {
     this.log("Called set volume", volume, params.fade ? "with fade" : "");
 
     this.volume = volume;
 
     if (params.fade) {
-      this.fadeToVolume(volume);
+      await this.fadeToVolume(volume);
     } else {
       this.playerElement.volume = Math.max(Math.min(volume, 1), 0);
     }
