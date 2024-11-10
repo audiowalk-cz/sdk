@@ -40,7 +40,7 @@ export class MediaControlsController {
       .pipe(takeUntil(this.playerDetachEvent))
       .subscribe(([currentTime, totalTime]) => {
         navigator.mediaSession.setPositionState({
-          duration: Number.isNaN(totalTime) ? 0 : totalTime,
+          duration: totalTime || 0,
           position: currentTime,
         });
       });
