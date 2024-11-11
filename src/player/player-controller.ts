@@ -1,4 +1,4 @@
-import { BehaviorSubject, combineLatest, filter, interval, map, Subject, takeUntil, takeWhile } from "rxjs";
+import { BehaviorSubject, combineLatest, filter, interval, map, Subject, take, takeUntil } from "rxjs";
 import { PartialBy } from "../helpers/objects";
 import { LocalStorage } from "../storage/local-storage";
 
@@ -237,14 +237,15 @@ export class PlayerController {
       this.volume = volume;
 
       const fadeOutInterval = 100;
-      const fadeOutStep = (this.volume - this.playerElement.volume) / (this.options.crossfadeTime / fadeOutInterval);
+      const fadeOutSteps = this.options.crossfadeTime / fadeOutInterval;
+      const fadeOutStep = (this.volume - this.playerElement.volume) / fadeOutSteps;
 
       if (fadeOutStep === 0) return resolve();
 
       interval(fadeOutInterval)
         .pipe(takeUntil(this.fadeCancelEvent))
         .pipe(takeUntil(this.destroyEvent))
-        .pipe(takeWhile(() => Math.abs(this.playerElement.volume - this.volume) > Math.abs(fadeOutStep)))
+        .pipe(take(fadeOutSteps))
         .subscribe({
           next: () => {
             this.playerElement.volume = Math.max(0, Math.min(1, this.playerElement.volume + fadeOutStep));
