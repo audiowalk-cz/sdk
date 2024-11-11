@@ -244,7 +244,7 @@ export class PlayerController {
         .pipe(takeWhile(() => Math.abs(this.playerElement.volume - this.volume) > Math.abs(fadeOutStep)))
         .subscribe({
           next: () => {
-            this.playerElement.volume = Math.max(0, Math.min(1, fadeOutStep));
+            this.playerElement.volume = Math.max(0, Math.min(1, this.playerElement.volume + fadeOutStep));
           },
           error: (error) => reject(error),
           complete: () => {
