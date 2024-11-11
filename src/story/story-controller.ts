@@ -76,7 +76,7 @@ export class StoryController<
       newState = { ...oldState, ...update };
     }
 
-    this.setState(newState);
+    await this.setState(newState);
   }
 
   async setChapter(string: ChapterId) {
