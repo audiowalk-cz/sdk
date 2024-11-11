@@ -44,6 +44,7 @@ export class PlayerController {
     crossfadeTime: 2000,
   };
 
+  private destroyed = false;
   private destroyEvent = new Subject<void>();
 
   private volume: number = 1;
@@ -136,6 +137,8 @@ export class PlayerController {
   async destroy(now: boolean = false) {
     this.log("Called destroy" + (now ? "now" : ""));
 
+    this.destroyed = true;
+
     if (this.status.value !== PlayerStatus.ended) {
       await this.stop();
       return this.destroyNow();
@@ -194,7 +197,7 @@ export class PlayerController {
   async stop(params: { fade?: boolean } = { fade: this.options.crossfade }) {
     this.log("Called stop", params.fade ? "with fade" : "");
 
-    if (this.status.value !== PlayerStatus.ended) {
+    if (!this.destroyed && this.status.value !== PlayerStatus.ended) {
       this.status.next(PlayerStatus.ended);
       this.onStop.next();
     }
