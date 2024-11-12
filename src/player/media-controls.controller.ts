@@ -41,7 +41,7 @@ export class MediaControlsController {
       .subscribe(([currentTime, totalTime]) => {
         navigator.mediaSession.setPositionState({
           duration: totalTime || 0,
-          position: currentTime,
+          position: currentTime || 0,
         });
       });
   }
