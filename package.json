@@ -1,6 +1,6 @@
 {
   "name": "@audiowalk/sdk",
-  "version": "1.5.10",
+  "version": "3.0.0-rc",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/audiowalk-cz/components.git"
