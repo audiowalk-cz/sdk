@@ -98,9 +98,9 @@ export class StoryController<
 
     if (typeof chapter.nextChapter === "function") {
       const storyState = this.storyState.value;
-      const string = await chapter.nextChapter(storyState);
+      const chapterId = await chapter.nextChapter(storyState);
 
-      return this.setChapter(string);
+      return this.setChapter(chapterId);
     }
 
     throw new Error(`Invalid nextChapter type in chapter ${chapter.id}`);
