@@ -184,13 +184,20 @@ export class PlayerController {
     } else {
       this.playerElement.volume = this.volume;
     }
+
+    return this;
   }
 
-  async pause() {
+  async pause(params: { fade?: boolean } = { fade: this.options.crossfade }) {
     if (!this.playerElement.src) throw new Error("No file opened");
     if (this.status.value === PlayerStatus.ended) return;
 
-    this.log("Called pause");
+    this.log("Called pause", params);
+
+    if (params.fade) {
+      await this.fadeToVolume(0);
+    }
+
     this.playerElement?.pause();
   }
 
