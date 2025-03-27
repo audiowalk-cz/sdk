@@ -134,8 +134,8 @@ export class PlayerController {
     this.playerElement.volume = this.volume;
   }
 
-  async destroy(now: boolean = false) {
-    this.log("Called destroy" + (now ? "now" : ""));
+  async destroy(params: { now?: boolean } = { now: false }) {
+    this.log("Called destroy", params);
 
     this.destroyed = true;
 
@@ -145,7 +145,7 @@ export class PlayerController {
     }
 
     // if crossfade is enabled, we might be ending crossfade just now, so wait for the crossfade to finish
-    if (this.options.crossfade && now !== true) {
+    if (this.options.crossfade && params.now !== true) {
       setTimeout(() => this.destroyNow(), this.options.crossfadeTime);
     } else {
       this.destroyNow();
@@ -174,7 +174,7 @@ export class PlayerController {
     if (!this.playerElement.src) throw new Error("No file opened");
     if (this.status.value === PlayerStatus.playing) return;
 
-    this.log("Called play" + (params.fade ? "with fade" : ""));
+    this.log("Called play", params);
 
     await this.playerElement?.play();
 
@@ -184,18 +184,25 @@ export class PlayerController {
     } else {
       this.playerElement.volume = this.volume;
     }
+
+    return this;
   }
 
-  async pause() {
+  async pause(params: { fade?: boolean } = { fade: this.options.crossfade }) {
     if (!this.playerElement.src) throw new Error("No file opened");
     if (this.status.value === PlayerStatus.ended) return;
 
-    this.log("Called pause");
+    this.log("Called pause", params);
+
+    if (params.fade) {
+      await this.fadeToVolume(0);
+    }
+
     this.playerElement?.pause();
   }
 
   async stop(params: { fade?: boolean } = { fade: this.options.crossfade }) {
-    this.log("Called stop", params.fade ? "with fade" : "");
+    this.log("Called stop", params);
 
     if (!this.destroyed && this.status.value !== PlayerStatus.ended) {
       this.status.next(PlayerStatus.ended);
@@ -214,7 +221,7 @@ export class PlayerController {
     if (!this.playerElement.src) throw new Error("No file opened");
     if (this.status.value === PlayerStatus.ended) return;
 
-    this.log("Called seekTo");
+    this.log("Called seekTo", seconds);
     this.playerElement.currentTime = seconds;
   }
 
