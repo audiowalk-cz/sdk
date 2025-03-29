@@ -163,7 +163,7 @@ export class PlayerController {
   async preload() {
     this.log("Called preload");
     this.playerElement.volume = 0.01;
-    this.playerElement.play().catch(() => {});
+    await this.playerElement.play().catch(() => {});
     this.playerElement.pause();
     this.playerElement.volume = this.volume;
 
@@ -179,8 +179,7 @@ export class PlayerController {
     await this.playerElement?.play();
 
     if (params.fade) {
-      this.playerElement.volume = 0.01;
-      await this.fadeToVolume(this.volume);
+      await this.fadeIn();
     } else {
       this.playerElement.volume = this.volume;
     }
@@ -195,7 +194,7 @@ export class PlayerController {
     this.log("Called pause", params);
 
     if (params.fade) {
-      await this.fadeToVolume(0);
+      await this.fadeOut();
     }
 
     this.playerElement?.pause();
@@ -210,10 +209,11 @@ export class PlayerController {
     }
 
     if (params.fade) {
-      await this.fadeToVolume(0);
+      await this.fadeOut();
+    } else {
+      this.playerElement.pause();
     }
 
-    this.playerElement.pause();
     this.playerElement.currentTime = 0;
   }
 
@@ -237,15 +237,13 @@ export class PlayerController {
     }
   }
 
-  async fadeToVolume(volume: number) {
+  private async fadeToVolume(targetVolume: number) {
     return new Promise<void>((resolve, reject) => {
       this.fadeCancelEvent.next();
 
-      this.volume = volume;
-
       const fadeOutInterval = 100;
       const fadeOutSteps = this.options.crossfadeTime / fadeOutInterval;
-      const fadeOutStep = (this.volume - this.playerElement.volume) / fadeOutSteps;
+      const fadeOutStep = (targetVolume - this.playerElement.volume) / fadeOutSteps;
 
       if (fadeOutStep === 0) return resolve();
 
@@ -259,11 +257,23 @@ export class PlayerController {
           },
           error: (error) => reject(error),
           complete: () => {
-            this.playerElement.volume = this.volume;
+            this.playerElement.volume = targetVolume;
             resolve();
           },
         });
     });
+  }
+
+  async fadeOut() {
+    await this.fadeToVolume(0);
+    this.playerElement.pause();
+    this.playerElement.volume = this.volume;
+  }
+
+  async fadeIn() {
+    this.playerElement.volume = 0.01;
+    this.playerElement.play();
+    await this.fadeToVolume(this.volume);
   }
 
   back(seconds: number = 10) {
