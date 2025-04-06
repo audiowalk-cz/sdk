@@ -176,6 +176,8 @@ export class PlayerController {
 
     this.log("Called play", params);
 
+    this.fadeCancelEvent.next();
+
     await this.playerElement?.play();
 
     if (params.fade) {
@@ -196,6 +198,8 @@ export class PlayerController {
     this.status.next(PlayerStatus.paused);
     this.onPause.next();
 
+    this.fadeCancelEvent.next();
+
     if (params.fade) {
       await this.fadeOut();
     }
@@ -210,6 +214,8 @@ export class PlayerController {
       this.status.next(PlayerStatus.ended);
       this.onStop.next();
     }
+
+    this.fadeCancelEvent.next();
 
     if (params.fade) {
       await this.fadeOut();
