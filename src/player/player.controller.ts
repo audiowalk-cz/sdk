@@ -193,6 +193,9 @@ export class PlayerController {
 
     this.log("Called pause", params);
 
+    this.status.next(PlayerStatus.paused);
+    this.onPause.next();
+
     if (params.fade) {
       await this.fadeOut();
     }
