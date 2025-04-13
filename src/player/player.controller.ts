@@ -1,18 +1,16 @@
 import { BehaviorSubject, combineLatest, filter, interval, map, Subject, take, takeUntil } from "rxjs";
-import { PartialBy } from "../helpers/objects";
 import { LocalStorageController } from "../storage/local-storage.controller";
 
 export interface PlayerControllerOptions {
   autoSave?: boolean;
-  audioElement?: HTMLAudioElement;
+  audioElement?: HTMLAudioElement | null;
   loop?: boolean;
-  crossfade?: boolean;
-  crossfadeTime: number;
+  fadeIn?: boolean;
+  fadeOut?: boolean;
+  fadeTime?: number;
   keepPlayer?: boolean;
   volume?: number;
 }
-
-export type PlayerControllerParams = PartialBy<PlayerControllerOptions, "crossfadeTime">;
 
 export enum PlayerStatus {
   "playing" = "playing",
@@ -38,10 +36,17 @@ export class PlayerController {
 
   private localStorage = new LocalStorageController({ prefix: "player" });
 
-  private options: PlayerControllerOptions;
+  private options: Required<PlayerControllerOptions>;
 
-  private defaultOptions: PlayerControllerOptions = {
-    crossfadeTime: 2000,
+  private defaultOptions: Required<PlayerControllerOptions> = {
+    fadeTime: 2000,
+    audioElement: null,
+    autoSave: false,
+    loop: false,
+    fadeIn: false,
+    fadeOut: false,
+    keepPlayer: false,
+    volume: 1,
   };
 
   private destroyed = false;
@@ -51,7 +56,7 @@ export class PlayerController {
 
   private fadeCancelEvent = new Subject<void>();
 
-  constructor(private trackId: string, trackUrl: string, options: PlayerControllerParams = {}) {
+  constructor(private trackId: string, trackUrl: string, options: PlayerControllerOptions = {}) {
     this.options = { ...this.defaultOptions, ...options };
 
     this.playerElement = this.options.audioElement ?? new Audio();
@@ -72,7 +77,7 @@ export class PlayerController {
     this.playerElement.addEventListener("ended", () => {
       this.savePosition(0);
 
-      if (!this.options.crossfade && !this.options.loop) {
+      if (!this.options.fadeOut && !this.options.loop) {
         this.onStop.next();
         this.status.next(PlayerStatus.ended);
       }
@@ -107,11 +112,11 @@ export class PlayerController {
       this.currentTime.pipe(takeUntil(this.destroyEvent)).subscribe((currentTime) => this.savePosition(currentTime));
     }
 
-    if (this.options.crossfade && !this.options.loop) {
+    if (this.options.fadeOut && !this.options.loop) {
       combineLatest([this.currentTime, this.totalTime])
         .pipe(takeUntil(this.destroyEvent))
         .pipe(filter(([currentTime, totalTime]) => !!totalTime)) // track is loaded
-        .pipe(filter(([currentTime, totalTime]) => currentTime >= totalTime! - this.options.crossfadeTime / 1000)) // crossfading should start
+        .pipe(filter(([currentTime, totalTime]) => currentTime >= totalTime! - this.options.fadeTime / 1000)) // crossfading should start
         .subscribe(([currentTime, totalTime]) => {
           if (this.status.value !== PlayerStatus.ended) this.stop();
         });
@@ -134,19 +139,20 @@ export class PlayerController {
     this.playerElement.volume = this.volume;
   }
 
-  async destroy(params: { now?: boolean } = { now: false }) {
+  async destroy(params: { now?: boolean; fade?: boolean } = { now: false, fade: this.options.fadeOut }) {
     this.log("Called destroy", params);
 
     this.destroyed = true;
 
     if (this.status.value !== PlayerStatus.ended) {
-      await this.stop();
+      await this.stop({ fadeOut: params.fade });
       return this.destroyNow();
     }
 
-    // if crossfade is enabled, we might be ending crossfade just now, so wait for the crossfade to finish
-    if (this.options.crossfade && params.now !== true) {
-      setTimeout(() => this.destroyNow(), this.options.crossfadeTime);
+    // if crossfade is enabled, we might be in stopped status but ending crossfade, so wait for the crossfade to finish
+    if (this.playerElement.paused !== true) {
+      this.log("Waiting for crossfade to finish destroying player");
+      setTimeout(() => this.destroyNow(), this.options.fadeTime);
     } else {
       this.destroyNow();
     }
@@ -170,7 +176,7 @@ export class PlayerController {
     this.log("Preloaded");
   }
 
-  async play(params: { fade?: boolean } = { fade: this.options.crossfade }) {
+  async play(params: { fadeIn?: boolean } = { fadeIn: this.options.fadeIn }) {
     if (!this.playerElement.src) throw new Error("No file opened");
     if (this.status.value === PlayerStatus.playing) return;
 
@@ -180,7 +186,7 @@ export class PlayerController {
 
     await this.playerElement?.play();
 
-    if (params.fade) {
+    if (params.fadeIn) {
       await this.fadeIn();
     } else {
       this.playerElement.volume = this.volume;
@@ -189,7 +195,7 @@ export class PlayerController {
     return this;
   }
 
-  async pause(params: { fade?: boolean } = { fade: this.options.crossfade }) {
+  async pause(params: { fadeOut?: boolean } = { fadeOut: this.options.fadeOut }) {
     if (!this.playerElement.src) throw new Error("No file opened");
     if (this.status.value === PlayerStatus.ended) return;
 
@@ -200,14 +206,14 @@ export class PlayerController {
 
     this.fadeCancelEvent.next();
 
-    if (params.fade) {
+    if (params.fadeOut) {
       await this.fadeOut();
     }
 
     this.playerElement?.pause();
   }
 
-  async stop(params: { fade?: boolean } = { fade: this.options.crossfade }) {
+  async stop(params: { fadeOut?: boolean } = { fadeOut: this.options.fadeOut }) {
     this.log("Called stop", params);
 
     if (!this.destroyed && this.status.value !== PlayerStatus.ended) {
@@ -217,7 +223,7 @@ export class PlayerController {
 
     this.fadeCancelEvent.next();
 
-    if (params.fade) {
+    if (params.fadeOut) {
       await this.fadeOut();
     } else {
       this.playerElement.pause();
@@ -251,7 +257,7 @@ export class PlayerController {
       this.fadeCancelEvent.next();
 
       const fadeOutInterval = 100;
-      const fadeOutSteps = this.options.crossfadeTime / fadeOutInterval;
+      const fadeOutSteps = this.options.fadeTime / fadeOutInterval;
       const fadeOutStep = (targetVolume - this.playerElement.volume) / fadeOutSteps;
 
       if (fadeOutStep === 0) return resolve();
