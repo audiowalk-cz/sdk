@@ -139,13 +139,13 @@ export class PlayerController {
     this.playerElement.volume = this.volume;
   }
 
-  async destroy(params: { now?: boolean; fade?: boolean } = { now: false, fade: this.options.fadeOut }) {
+  async destroy(params: { now?: boolean; fadeOut?: boolean } = { now: false, fadeOut: this.options.fadeOut }) {
     this.log("Called destroy", params);
 
     this.destroyed = true;
 
     if (this.status.value !== PlayerStatus.ended) {
-      await this.stop({ fadeOut: params.fade });
+      await this.stop({ fadeOut: params.fadeOut });
       return this.destroyNow();
     }
 
