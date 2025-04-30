@@ -262,6 +262,10 @@ export class PlayerController {
 
       if (fadeOutStep === 0) return resolve();
 
+      // FIXME: we need to unsubscribe from this interval on fadeCancelEvent but not complete observable,
+      // so that current actions is never finished, because then previous action will finish after the new action
+      // e.g. pause will finish after play
+
       interval(fadeOutInterval)
         .pipe(takeUntil(this.fadeCancelEvent))
         .pipe(takeUntil(this.destroyEvent))
