@@ -51,11 +51,21 @@ export class MediaControlsController {
 
     navigator.mediaSession.setActionHandler("play", null);
     navigator.mediaSession.setActionHandler("pause", null);
+    navigator.mediaSession.setActionHandler("seekbackward", null);
+    navigator.mediaSession.setActionHandler("seekforward", null);
     navigator.mediaSession.setActionHandler("previoustrack", null);
     navigator.mediaSession.setActionHandler("nexttrack", null);
+    navigator.mediaSession.setActionHandler("seekto", null);
   }
 
+  /**
+   * @deprecated Use destroy() instead.
+   */
   clear() {
+    return this.destroy();
+  }
+
+  destroy() {
     this.detachPlayer();
 
     navigator.mediaSession.playbackState = "none";
