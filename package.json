@@ -16,10 +16,9 @@
     "build": "tsc",
     "build:watch": "tsc -w",
     "prepublishOnly": "npm run build",
-    "release": "git switch release && git merge master --ff-only && git push --follow-tags && git switch master",
-    "release:patch": "git switch master && npm version patch && git switch release && git merge master --ff-only && git push --follow-tags && git switch master && git push",
-    "release:minor": "git switch master && npm version minor && git switch release && git merge master --ff-only && git push --follow-tags && git switch master && git push",
-    "release:major": "git switch master && npm version major && git switch release && git merge master --ff-only && git push --follow-tags && git switch master && git push"
+    "release:patch": "git switch master && npm version patch && npm publish && git push --follow-tags",
+    "release:minor": "git switch master && npm version minor && npm publish && git push --follow-tags",
+    "release:major": "git switch master && npm version major && npm publish && git push --follow-tags"
   },
   "author": "",
   "license": "ISC",
